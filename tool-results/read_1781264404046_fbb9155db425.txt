@@ -1,0 +1,744 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback } from 'react';
+     4→     4→import {
+     5→     5→  GraduationCap, LogIn, BookOpen, ClipboardCheck, CreditCard,
+     6→     6→  Bell, User, Calendar, TrendingUp, AlertCircle, CheckCircle2,
+     7→     7→  Clock, XCircle, ChevronRight, Phone, School, Moon, Star
+     8→     8→} from 'lucide-react';
+     9→     9→
+    10→    10→// ============================================================
+    11→    11→// Types
+    12→    12→// ============================================================
+    13→    13→interface StudentInfo {
+    14→    14→  id: string;
+    15→    15→  name: string;
+    16→    16→  nis: string;
+    17→    17→  classroom: string;
+    18→    18→  level: number;
+    19→    19→  academicYear: string;
+    20→    20→  waliKelas: { name: string; phone: string } | null;
+    21→    21→  tenant: { name: string; slug: string };
+    22→    22→  gender: string;
+    23→    23→}
+    24→    24→
+    25→    25→interface AttendanceSummary {
+    26→    26→  hadir: number;
+    27→    27→  sakit: number;
+    28→    28→  izin: number;
+    29→    29→  alpha: number;
+    30→    30→  total: number;
+    31→    31→  recent: { date: string; status: string; timeIn: string | null; note: string | null }[];
+    32→    32→}
+    33→    33→
+    34→    34→interface PaymentInfo {
+    35→    35→  all: { id: string; month: number; year: number; amount: number; status: string; dueDate: string; paidAt: string | null }[];
+    36→    36→  unpaid: { id: string; month: number; year: number; amount: number; status: string; dueDate: string }[];
+    37→    37→  totalUnpaid: number;
+    38→    38→}
+    39→    39→
+    40→    40→interface GradeInfo {
+    41→    41→  list: { id: string; score: number; subject: { name: string; code: string } }[];
+    42→    42→  average: number;
+    43→    43→  count: number;
+    44→    44→}
+    45→    45→
+    46→    46→interface AnnouncementInfo {
+    47→    47→  id: string;
+    48→    48→  title: string;
+    49→    49→  content: string;
+    50→    50→  category: string;
+    51→    51→  isPinned: boolean;
+    52→    52→  publishedAt: string;
+    53→    53→}
+    54→    54→
+    55→    55→interface DashboardData {
+    56→    56→  student: StudentInfo;
+    57→    57→  attendanceSummary: AttendanceSummary;
+    58→    58→  payments: PaymentInfo;
+    59→    59→  grades: GradeInfo;
+    60→    60→  announcements: AnnouncementInfo[];
+    61→    61→}
+    62→    62→
+    63→    63→// ============================================================
+    64→    64→// Constants
+    65→    65→// ============================================================
+    66→    66→const MONTH_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    67→    67→  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    68→    68→
+    69→    69→const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
+    70→    70→  HADIR: { label: 'Hadir', color: 'text-emerald-600 bg-emerald-50', icon: CheckCircle2 },
+    71→    71→  SAKIT: { label: 'Sakit', color: 'text-amber-600 bg-amber-50', icon: AlertCircle },
+    72→    72→  IZIN: { label: 'Izin', color: 'text-blue-600 bg-blue-50', icon: Clock },
+    73→    73→  ALPHA: { label: 'Alpha', color: 'text-red-600 bg-red-50', icon: XCircle },
+    74→    74→};
+    75→    75→
+    76→    76→const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
+    77→    77→  LUNAS: { label: 'Lunas', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    78→    78→  BELUM_BAYAR: { label: 'Belum Bayar', color: 'text-red-700 bg-red-50 border-red-200' },
+    79→    79→  MENUNGGU: { label: 'Menunggu', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+    80→    80→};
+    81→    81→
+    82→    82→// ============================================================
+    83→    83→// Main Component
+    84→    84→// ============================================================
+    85→    85→export default function SIMTParentPortal() {
+    86→    86→  const [isLoggedIn, setIsLoggedIn] = useState(false);
+    87→    87→  const [email, setEmail] = useState('');
+    88→    88→  const [loginError, setLoginError] = useState('');
+    89→    89→  const [isLoading, setIsLoading] = useState(false);
+    90→    90→  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+    91→    91→  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'grades' | 'payments' | 'announcements'>('dashboard');
+    92→    92→  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+    93→    93→  const [students, setStudents] = useState<StudentInfo[]>([]);
+    94→    94→
+    95→    95→  // Login handler
+    96→    96→  const handleLogin = useCallback(async () => {
+    97→    97→    if (!email.trim()) {
+    98→    98→      setLoginError('Email wajib diisi');
+    99→    99→      return;
+   100→   100→    }
+   101→   101→    setIsLoading(true);
+   102→   102→    setLoginError('');
+   103→   103→    try {
+   104→   104→      const res = await fetch('/api/auth', {
+   105→   105→        method: 'POST',
+   106→   106→        headers: { 'Content-Type': 'application/json' },
+   107→   107→        body: JSON.stringify({ email: email.trim() }),
+   108→   108→      });
+   109→   109→      const data = await res.json();
+   110→   110→      if (!res.ok) {
+   111→   111→        setLoginError(data.error || 'Login gagal');
+   112→   112→        return;
+   113→   113→      }
+   114→   114→      setStudents(data.students);
+   115→   115→      if (data.students.length > 0) {
+   116→   116→        setSelectedStudentId(data.students[0].id);
+   117→   117→        setIsLoggedIn(true);
+   118→   118→      }
+   119→   119→    } catch {
+   120→   120→      setLoginError('Terjadi kesalahan koneksi');
+   121→   121→    } finally {
+   122→   122→      setIsLoading(false);
+   123→   123→    }
+   124→   124→  }, [email]);
+   125→   125→
+   126→   126→  // Fetch dashboard data
+   127→   127→  useEffect(() => {
+   128→   128→    if (!selectedStudentId) return;
+   129→   129→    const fetchData = async () => {
+   130→   130→      setIsLoading(true);
+   131→   131→      try {
+   132→   132→        const res = await fetch(`/api/dashboard?studentId=${selectedStudentId}`);
+   133→   133→        const data = await res.json();
+   134→   134→        setDashboard(data);
+   135→   135→      } catch (err) {
+   136→   136→        console.error('Failed to fetch dashboard:', err);
+   137→   137→      } finally {
+   138→   138→        setIsLoading(false);
+   139→   139→      }
+   140→   140→    };
+   141→   141→    fetchData();
+   142→   142→  }, [selectedStudentId]);
+   143→   143→
+   144→   144→  // ============================================================
+   145→   145→  // LOGIN SCREEN
+   146→   146→  // ============================================================
+   147→   147→  if (!isLoggedIn) {
+   148→   148→    return (
+   149→   149→      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
+   150→   150→        {/* Header */}
+   151→   151→        <header className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white px-4 py-3 shadow-lg">
+   152→   152→          <div className="max-w-lg mx-auto flex items-center gap-3">
+   153→   153→            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+   154→   154→              <GraduationCap className="w-6 h-6" />
+   155→   155→            </div>
+   156→   156→            <div>
+   157→   157→              <h1 className="text-lg font-bold leading-tight">SIMT MTs</h1>
+   158→   158→              <p className="text-xs text-emerald-100">Portal Orang Tua</p>
+   159→   159→            </div>
+   160→   160→          </div>
+   161→   161→        </header>
+   162→   162→
+   163→   163→        {/* Login Form */}
+   164→   164→        <main className="flex-1 flex items-center justify-center p-4">
+   165→   165→          <div className="w-full max-w-md">
+   166→   166→            <div className="text-center mb-8">
+   167→   167→              <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-200">
+   168→   168→                <GraduationCap className="w-10 h-10 text-white" />
+   169→   169→              </div>
+   170→   170→              <h2 className="text-2xl font-bold text-gray-800">Portal Orang Tua</h2>
+   171→   171→              <p className="text-gray-500 mt-1">Sistem Informasi Manajemen Terpadu MTs</p>
+   172→   172→              <p className="text-xs text-gray-400 mt-1">Masuk dengan email yang terdaftar di data siswa</p>
+   173→   173→            </div>
+   174→   174→
+   175→   175→            <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 p-6 border border-gray-100">
+   176→   176→              <div className="space-y-4">
+   177→   177→                <div>
+   178→   178→                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+   179→   179→                    Email Wali Murid
+   180→   180→                  </label>
+   181→   181→                  <div className="relative">
+   182→   182→                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+   183→   183→                    <input
+   184→   184→                      type="email"
+   185→   185→                      value={email}
+   186→   186→                      onChange={(e) => { setEmail(e.target.value); setLoginError(''); }}
+   187→   187→                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+   188→   188→                      placeholder="ortu1@email.com"
+   189→   189→                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm outline-none transition-all"
+   190→   190→                    />
+   191→   191→                  </div>
+   192→   192→                </div>
+   193→   193→
+   194→   194→                {loginError && (
+   195→   195→                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+   196→   196→                    <AlertCircle className="w-4 h-4 shrink-0" />
+   197→   197→                    {loginError}
+   198→   198→                  </div>
+   199→   199→                )}
+   200→   200→
+   201→   201→                <button
+   202→   202→                  onClick={handleLogin}
+   203→   203→                  disabled={isLoading}
+   204→   204→                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-2.5 rounded-xl font-medium hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md shadow-emerald-200"
+   205→   205→                >
+   206→   206→                  {isLoading ? (
+   207→   207→                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+   208→   208→                  ) : (
+   209→   209→                    <>
+   210→   210→                      <LogIn className="w-4 h-4" />
+   211→   211→                      Masuk
+   212→   212→                    </>
+   213→   213→                  )}
+   214→   214→                </button>
+   215→   215→              </div>
+   216→   216→
+   217→   217→              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+   218→   218→                <p className="text-xs text-amber-700">
+   219→   219→                  <strong>Demo:</strong> Gunakan email <code className="bg-amber-100 px-1 py-0.5 rounded">ortu1@email.com</code> s/d <code className="bg-amber-100 px-1 py-0.5 rounded">ortu8@email.com</code>
+   220→   220→                </p>
+   221→   221→              </div>
+   222→   222→            </div>
+   223→   223→
+   224→   224→            <p className="text-center text-xs text-gray-400 mt-6">
+   225→   225→              SIMT MTs v1.0 &copy; 2026 &mdash; Madrasah Tsanawiyah
+   226→   226→            </p>
+   227→   227→          </div>
+   228→   228→        </main>
+   229→   229→      </div>
+   230→   230→    );
+   231→   231→  }
+   232→   232→
+   233→   233→  // ============================================================
+   234→   234→  // LOADING
+   235→   235→  // ============================================================
+   236→   236→  if (!dashboard) {
+   237→   237→    return (
+   238→   238→      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+   239→   239→        <div className="text-center">
+   240→   240→          <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4" />
+   241→   241→          <p className="text-gray-500">Memuat data...</p>
+   242→   242→        </div>
+   243→   243→      </div>
+   244→   244→    );
+   245→   245→  }
+   246→   246→
+   247→   247→  const { student, attendanceSummary, payments, grades, announcements } = dashboard;
+   248→   248→  const attendancePercent = attendanceSummary.total > 0
+   249→   249→    ? Math.round((attendanceSummary.hadir / attendanceSummary.total) * 100)
+   250→   250→    : 0;
+   251→   251→
+   252→   252→  // ============================================================
+   253→   253→  // MAIN PORTAL
+   254→   254→  // ============================================================
+   255→   255→  return (
+   256→   256→    <div className="min-h-screen bg-gray-50 flex flex-col">
+   257→   257→      {/* Header */}
+   258→   258→      <header className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white px-4 py-3 shadow-lg sticky top-0 z-50">
+   259→   259→        <div className="max-w-2xl mx-auto">
+   260→   260→          <div className="flex items-center justify-between">
+   261→   261→            <div className="flex items-center gap-3">
+   262→   262→              <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+   263→   263→                <GraduationCap className="w-5 h-5" />
+   264→   264→              </div>
+   265→   265→              <div>
+   266→   266→                <h1 className="text-sm font-bold leading-tight">{student.tenant.name}</h1>
+   267→   267→                <p className="text-[10px] text-emerald-100">Portal Orang Tua</p>
+   268→   268→              </div>
+   269→   269→            </div>
+   270→   270→            <div className="flex items-center gap-2">
+   271→   271→              {students.length > 1 && (
+   272→   272→                <select
+   273→   273→                  value={selectedStudentId || ''}
+   274→   274→                  onChange={(e) => setSelectedStudentId(e.target.value)}
+   275→   275→                  className="bg-white/15 border border-white/20 rounded-lg px-2 py-1 text-xs text-white outline-none"
+   276→   276→                >
+   277→   277→                  {students.map(s => (
+   278→   278→                    <option key={s.id} value={s.id} className="text-gray-800">
+   279→   279→                      {s.name} ({s.classroom})
+   280→   280→                    </option>
+   281→   281→                  ))}
+   282→   282→                </select>
+   283→   283→              )}
+   284→   284→              <button
+   285→   285→                onClick={() => { setIsLoggedIn(false); setDashboard(null); setEmail(''); }}
+   286→   286→                className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-lg transition-colors"
+   287→   287→              >
+   288→   288→                Keluar
+   289→   289→              </button>
+   290→   290→            </div>
+   291→   291→          </div>
+   292→   292→        </div>
+   293→   293→      </header>
+   294→   294→
+   295→   295→      {/* Student Info Card */}
+   296→   296→      <div className="bg-gradient-to-b from-emerald-700 to-emerald-800 text-white px-4 pb-5 pt-1">
+   297→   297→        <div className="max-w-2xl mx-auto">
+   298→   298→          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+   299→   299→            <div className="flex items-start gap-3">
+   300→   300→              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-lg font-bold shrink-0">
+   301→   301→                {student.name.charAt(0)}
+   302→   302→              </div>
+   303→   303→              <div className="flex-1 min-w-0">
+   304→   304→                <h2 className="font-bold text-base truncate">{student.name}</h2>
+   305→   305→                <p className="text-xs text-emerald-100 mt-0.5">
+   306→   306→                  NIS: {student.nis} &bull; Kelas {student.classroom}
+   307→   307→                </p>
+   308→   308→                {student.waliKelas && (
+   309→   309→                  <div className="flex items-center gap-1 mt-1.5">
+   310→   310→                    <Phone className="w-3 h-3 text-emerald-200" />
+   311→   311→                    <span className="text-[10px] text-emerald-100">
+   312→   312→                      Wali Kelas: {student.waliKelas.name}
+   313→   313→                    </span>
+   314→   314→                  </div>
+   315→   315→                )}
+   316→   316→              </div>
+   317→   317→            </div>
+   318→   318→          </div>
+   319→   319→        </div>
+   320→   320→      </div>
+   321→   321→
+   322→   322→      {/* Quick Stats */}
+   323→   323→      <div className="px-4 -mt-3">
+   324→   324→        <div className="max-w-2xl mx-auto grid grid-cols-4 gap-2">
+   325→   325→          <StatCard
+   326→   326→            icon={<ClipboardCheck className="w-4 h-4" />}
+   327→   327→            label="Kehadiran"
+   328→   328→            value={`${attendancePercent}%`}
+   329→   329→            sublabel={`${attendanceSummary.hadir}/${attendanceSummary.total} hari`}
+   330→   330→            color="emerald"
+   331→   331→          />
+   332→   332→          <StatCard
+   333→   333→            icon={<TrendingUp className="w-4 h-4" />}
+   334→   334→            label="Rata-rata"
+   335→   335→            value={String(grades.average)}
+   336→   336→            sublabel={`${grades.count} mapel`}
+   337→   337→            color={grades.average >= 75 ? 'blue' : 'amber'}
+   338→   338→          />
+   339→   339→          <StatCard
+   340→   340→            icon={<CreditCard className="w-4 h-4" />}
+   341→   341→            label="Tunggakan"
+   342→   342→            value={payments.totalUnpaid > 0 ? `Rp ${(payments.totalUnpaid / 1000).toFixed(0)}K` : 'Lunas'}
+   343→   343→            sublabel={`${payments.unpaid.length} bln belum`}
+   344→   344→            color={payments.totalUnpaid > 0 ? 'red' : 'emerald'}
+   345→   345→          />
+   346→   346→          <StatCard
+   347→   347→            icon={<Bell className="w-4 h-4" />}
+   348→   348→            label="Info"
+   349→   349→            value={String(announcements.length)}
+   350→   350→            sublabel="pengumuman"
+   351→   351→            color="purple"
+   352→   352→          />
+   353→   353→        </div>
+   354→   354→      </div>
+   355→   355→
+   356→   356→      {/* Tab Navigation */}
+   357→   357→      <div className="px-4 mt-4">
+   358→   358→        <div className="max-w-2xl mx-auto">
+   359→   359→          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+   360→   360→            {([
+   361→   361→              { key: 'dashboard', label: 'Beranda', icon: <School className="w-3.5 h-3.5" /> },
+   362→   362→              { key: 'attendance', label: 'Presensi', icon: <ClipboardCheck className="w-3.5 h-3.5" /> },
+   363→   363→              { key: 'grades', label: 'Nilai', icon: <BookOpen className="w-3.5 h-3.5" /> },
+   364→   364→              { key: 'payments', label: 'SPP', icon: <CreditCard className="w-3.5 h-3.5" /> },
+   365→   365→              { key: 'announcements', label: 'Info', icon: <Bell className="w-3.5 h-3.5" /> },
+   366→   366→            ] as const).map(tab => (
+   367→   367→              <button
+   368→   368→                key={tab.key}
+   369→   369→                onClick={() => setActiveTab(tab.key)}
+   370→   370→                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-lg text-xs font-medium transition-all ${
+   371→   371→                  activeTab === tab.key
+   372→   372→                    ? 'bg-white text-emerald-700 shadow-sm'
+   373→   373→                    : 'text-gray-500 hover:text-gray-700'
+   374→   374→                }`}
+   375→   375→              >
+   376→   376→                {tab.icon}
+   377→   377→                <span className="hidden sm:inline">{tab.label}</span>
+   378→   378→              </button>
+   379→   379→            ))}
+   380→   380→          </div>
+   381→   381→        </div>
+   382→   382→      </div>
+   383→   383→
+   384→   384→      {/* Tab Content */}
+   385→   385→      <main className="flex-1 px-4 py-4 pb-24">
+   386→   386→        <div className="max-w-2xl mx-auto space-y-4">
+   387→   387→          {/* DASHBOARD TAB */}
+   388→   388→          {activeTab === 'dashboard' && (
+   389→   389→            <>
+   390→   390→              {/* Attendance Summary */}
+   391→   391→              <SectionCard title="Rekap Kehadiran Bulan Ini" icon={<ClipboardCheck className="w-4 h-4" />}>
+   392→   392→                <div className="flex items-center gap-4 mb-3">
+   393→   393→                  <div className="relative w-20 h-20">
+   394→   394→                    <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90">
+   395→   395→                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+   396→   396→                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
+   397→   397→                        strokeDasharray={`${attendancePercent} ${100 - attendancePercent}`}
+   398→   398→                        strokeLinecap="round" />
+   399→   399→                    </svg>
+   400→   400→                    <div className="absolute inset-0 flex items-center justify-center">
+   401→   401→                      <span className="text-lg font-bold text-emerald-700">{attendancePercent}%</span>
+   402→   402→                    </div>
+   403→   403→                  </div>
+   404→   404→                  <div className="flex-1 grid grid-cols-2 gap-2">
+   405→   405→                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+   406→   406→                      const count = attendanceSummary[key.toLowerCase() as keyof typeof attendanceSummary] as number;
+   407→   407→                      return (
+   408→   408→                        <div key={key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${cfg.color}`}>
+   409→   409→                          <cfg.icon className="w-3.5 h-3.5" />
+   410→   410→                          <span className="text-xs font-medium">{cfg.label}: {count}</span>
+   411→   411→                        </div>
+   412→   412→                      );
+   413→   413→                    })}
+   414→   414→                  </div>
+   415→   415→                </div>
+   416→   416→              </SectionCard>
+   417→   417→
+   418→   418→              {/* Unpaid Payments Alert */}
+   419→   419→              {payments.totalUnpaid > 0 && (
+   420→   420→                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+   421→   421→                  <div className="flex items-start gap-3">
+   422→   422→                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+   423→   423→                    <div className="flex-1">
+   424→   424→                      <p className="font-semibold text-red-800 text-sm">Tunggakan SPP</p>
+   425→   425→                      <p className="text-red-700 text-xs mt-1">
+   426→   426→                        Terdapat {payments.unpaid.length} bulan SPP belum dibayar dengan total <strong>Rp {payments.totalUnpaid.toLocaleString('id-ID')}</strong>
+   427→   427→                      </p>
+   428→   428→                      <button
+   429→   429→                        onClick={() => setActiveTab('payments')}
+   430→   430→                        className="mt-2 text-xs text-red-700 font-medium underline underline-offset-2"
+   431→   431→                      >
+   432→   432→                        Lihat detail &rarr;
+   433→   433→                      </button>
+   434→   434→                    </div>
+   435→   435→                  </div>
+   436→   436→                </div>
+   437→   437→              )}
+   438→   438→
+   439→   439→              {/* Recent Announcements */}
+   440→   440→              <SectionCard title="Pengumuman Terbaru" icon={<Bell className="w-4 h-4" />}>
+   441→   441→                <div className="space-y-3">
+   442→   442→                  {announcements.slice(0, 3).map(a => (
+   443→   443→                    <div key={a.id} className="border border-gray-100 rounded-lg p-3 hover:bg-gray-50 transition-colors">
+   444→   444→                      <div className="flex items-start gap-2">
+   445→   445→                        {a.isPinned && <Star className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />}
+   446→   446→                        <div className="flex-1 min-w-0">
+   447→   447→                          <p className="text-sm font-medium text-gray-800">{a.title}</p>
+   448→   448→                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{a.content}</p>
+   449→   449→                          <div className="flex items-center gap-2 mt-1.5">
+   450→   450→                            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{a.category}</span>
+   451→   451→                            <span className="text-[10px] text-gray-400">
+   452→   452→                              {new Date(a.publishedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+   453→   453→                            </span>
+   454→   454→                          </div>
+   455→   455→                        </div>
+   456→   456→                        <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+   457→   457→                      </div>
+   458→   458→                    </div>
+   459→   459→                  ))}
+   460→   460→                </div>
+   461→   461→              </SectionCard>
+   462→   462→
+   463→   463→              {/* Grade Summary */}
+   464→   464→              <SectionCard title="Ringkasan Nilai" icon={<BookOpen className="w-4 h-4" />}>
+   465→   465→                <div className="flex items-center gap-4">
+   466→   466→                  <div className="text-center">
+   467→   467→                    <div className={`text-3xl font-bold ${grades.average >= 75 ? 'text-blue-600' : 'text-amber-600'}`}>
+   468→   468→                      {grades.average}
+   469→   469→                    </div>
+   470→   470→                    <p className="text-[10px] text-gray-400 mt-1">Rata-rata</p>
+   471→   471→                  </div>
+   472→   472→                  <div className="flex-1">
+   473→   473→                    <div className="space-y-1.5">
+   474→   474→                      {grades.list.slice(0, 4).map(g => (
+   475→   475→                        <div key={g.id} className="flex items-center gap-2">
+   476→   476→                          <span className="text-xs text-gray-600 w-24 truncate">{g.subject.name}</span>
+   477→   477→                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+   478→   478→                            <div
+   479→   479→                              className={`h-full rounded-full ${g.score >= 75 ? 'bg-blue-500' : g.score >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+   480→   480→                              style={{ width: `${g.score}%` }}
+   481→   481→                            />
+   482→   482→                          </div>
+   483→   483→                          <span className={`text-xs font-medium w-8 text-right ${g.score >= 75 ? 'text-blue-600' : g.score >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
+   484→   484→                            {g.score}
+   485→   485→                          </span>
+   486→   486→                        </div>
+   487→   487→                      ))}
+   488→   488→                    </div>
+   489→   489→                  </div>
+   490→   490→                </div>
+   491→   491→              </SectionCard>
+   492→   492→            </>
+   493→   493→          )}
+   494→   494→
+   495→   495→          {/* ATTENDANCE TAB */}
+   496→   496→          {activeTab === 'attendance' && (
+   497→   497→            <SectionCard title="Riwayat Kehadiran" icon={<ClipboardCheck className="w-4 h-4" />}>
+   498→   498→              {/* Summary */}
+   499→   499→              <div className="grid grid-cols-4 gap-2 mb-4">
+   500→   500→                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+   501→   501→                  const count = attendanceSummary[key.toLowerCase() as keyof typeof attendanceSummary] as number;
+   502→   502→                  return (
+   503→   503→                    <div key={key} className={`text-center p-2 rounded-lg ${cfg.color}`}>
+   504→   504→                      <cfg.icon className="w-4 h-4 mx-auto mb-1" />
+   505→   505→                      <p className="text-lg font-bold">{count}</p>
+   506→   506→                      <p className="text-[10px]">{cfg.label}</p>
+   507→   507→                    </div>
+   508→   508→                  );
+   509→   509→                })}
+   510→   510→              </div>
+   511→   511→
+   512→   512→              {/* Daily Log */}
+   513→   513→              <div className="space-y-2">
+   514→   514→                {attendanceSummary.recent.map((a, i) => {
+   515→   515→                  const status = STATUS_CONFIG[a.status] || STATUS_CONFIG.HADIR;
+   516→   516→                  const StatusIcon = status.icon;
+   517→   517→                  return (
+   518→   518→                    <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+   519→   519→                      <div className="w-10 h-10 bg-white rounded-lg flex flex-col items-center justify-center border border-gray-100">
+   520→   520→                        <span className="text-xs font-bold text-gray-700">
+   521→   521→                          {new Date(a.date).getDate()}
+   522→   522→                        </span>
+   523→   523→                        <span className="text-[8px] text-gray-400">
+   524→   524→                          {new Date(a.date).toLocaleDateString('id-ID', { weekday: 'short' })}
+   525→   525→                        </span>
+   526→   526→                      </div>
+   527→   527→                      <div className="flex-1 min-w-0">
+   528→   528→                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
+   529→   529→                          <StatusIcon className="w-3 h-3" />
+   530→   530→                          {status.label}
+   531→   531→                        </div>
+   532→   532→                        {a.timeIn && (
+   533→   533→                          <p className="text-[10px] text-gray-400 mt-0.5">
+   534→   534→                            Masuk: {new Date(a.timeIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+   535→   535→                          </p>
+   536→   536→                        )}
+   537→   537→                        {a.note && (
+   538→   538→                          <p className="text-[10px] text-gray-500 mt-0.5 truncate">{a.note}</p>
+   539→   539→                        )}
+   540→   540→                      </div>
+   541→   541→                    </div>
+   542→   542→                  );
+   543→   543→                })}
+   544→   544→              </div>
+   545→   545→            </SectionCard>
+   546→   546→          )}
+   547→   547→
+   548→   548→          {/* GRADES TAB */}
+   549→   549→          {activeTab === 'grades' && (
+   550→   550→            <SectionCard title="Nilai Pengetahuan" icon={<BookOpen className="w-4 h-4" />}>
+   551→   551→              <div className="flex items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+   552→   552→                <div className="text-center">
+   553→   553→                  <p className={`text-2xl font-bold ${grades.average >= 75 ? 'text-blue-600' : 'text-amber-600'}`}>
+   554→   554→                    {grades.average}
+   555→   555→                  </p>
+   556→   556→                  <p className="text-[10px] text-gray-400">Rata-rata</p>
+   557→   557→                </div>
+   558→   558→                <div className="h-10 w-px bg-gray-200" />
+   559→   559→                <div className="text-center">
+   560→   560→                  <p className="text-2xl font-bold text-gray-700">{grades.count}</p>
+   561→   561→                  <p className="text-[10px] text-gray-400">Mata Pelajaran</p>
+   562→   562→                </div>
+   563→   563→              </div>
+   564→   564→
+   565→   565→              <div className="space-y-2">
+   566→   566→                {grades.list.map(g => (
+   567→   567→                  <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+   568→   568→                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white ${
+   569→   569→                      g.score >= 80 ? 'bg-blue-500' : g.score >= 70 ? 'bg-emerald-500' : g.score >= 60 ? 'bg-amber-500' : 'bg-red-500'
+   570→   570→                    }`}>
+   571→   571→                      {g.score}
+   572→   572→                    </div>
+   573→   573→                    <div className="flex-1 min-w-0">
+   574→   574→                      <p className="text-sm font-medium text-gray-800 truncate">{g.subject.name}</p>
+   575→   575→                      <p className="text-[10px] text-gray-400">{g.subject.code}</p>
+   576→   576→                    </div>
+   577→   577→                    <div className="w-16">
+   578→   578→                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+   579→   579→                        <div
+   580→   580→                          className={`h-full rounded-full ${g.score >= 75 ? 'bg-blue-500' : g.score >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+   581→   581→                          style={{ width: `${g.score}%` }}
+   582→   582→                        />
+   583→   583→                      </div>
+   584→   584→                    </div>
+   585→   585→                  </div>
+   586→   586→                ))}
+   587→   587→              </div>
+   588→   588→            </SectionCard>
+   589→   589→          )}
+   590→   590→
+   591→   591→          {/* PAYMENTS TAB */}
+   592→   592→          {activeTab === 'payments' && (
+   593→   593→            <>
+   594→   594→              {/* Summary */}
+   595→   595→              <div className={`rounded-xl p-4 ${payments.totalUnpaid > 0 ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
+   596→   596→                <div className="flex items-center gap-3">
+   597→   597→                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${payments.totalUnpaid > 0 ? 'bg-red-100' : 'bg-emerald-100'}`}>
+   598→   598→                    <CreditCard className={`w-5 h-5 ${payments.totalUnpaid > 0 ? 'text-red-600' : 'text-emerald-600'}`} />
+   599→   599→                  </div>
+   600→   600→                  <div>
+   601→   601→                    <p className={`text-sm font-semibold ${payments.totalUnpaid > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
+   602→   602→                      {payments.totalUnpaid > 0 ? `Tunggakan: Rp ${payments.totalUnpaid.toLocaleString('id-ID')}` : 'SPP Lunas'}
+   603→   603→                    </p>
+   604→   604→                    <p className={`text-xs ${payments.totalUnpaid > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+   605→   605→                      {payments.unpaid.length > 0 ? `${payments.unpaid.length} bulan belum dibayar` : 'Semua pembayaran sudah lunas'}
+   606→   606→                    </p>
+   607→   607→                  </div>
+   608→   608→                </div>
+   609→   609→              </div>
+   610→   610→
+   611→   611→              {/* Payment List */}
+   612→   612→              <SectionCard title="Riwayat SPP 2026" icon={<CreditCard className="w-4 h-4" />}>
+   613→   613→                <div className="space-y-2">
+   614→   614→                  {payments.all.map(p => {
+   615→   615→                    const statusCfg = PAYMENT_STATUS[p.status] || PAYMENT_STATUS.BELUM_BAYAR;
+   616→   616→                    return (
+   617→   617→                      <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+   618→   618→                        <div className="w-10 h-10 bg-white rounded-lg flex flex-col items-center justify-center border border-gray-100">
+   619→   619→                          <span className="text-xs font-bold text-gray-700">{p.month}</span>
+   620→   620→                          <span className="text-[8px] text-gray-400">{p.year}</span>
+   621→   621→                        </div>
+   622→   622→                        <div className="flex-1 min-w-0">
+   623→   623→                          <p className="text-sm font-medium text-gray-800">
+   624→   624→                            SPP {MONTH_NAMES[p.month]} {p.year}
+   625→   625→                          </p>
+   626→   626→                          <p className="text-xs text-gray-500">
+   627→   627→                            Rp {p.amount.toLocaleString('id-ID')}
+   628→   628→                          </p>
+   629→   629→                          {p.paidAt && (
+   630→   630→                            <p className="text-[10px] text-gray-400">
+   631→   631→                              Dibayar: {new Date(p.paidAt).toLocaleDateString('id-ID')}
+   632→   632→                            </p>
+   633→   633→                          )}
+   634→   634→                        </div>
+   635→   635→                        <span className={`text-[10px] font-medium px-2 py-1 rounded-full border ${statusCfg.color}`}>
+   636→   636→                          {statusCfg.label}
+   637→   637→                        </span>
+   638→   638→                      </div>
+   639→   639→                    );
+   640→   640→                  })}
+   641→   641→                </div>
+   642→   642→              </SectionCard>
+   643→   643→            </>
+   644→   644→          )}
+   645→   645→
+   646→   646→          {/* ANNOUNCEMENTS TAB */}
+   647→   647→          {activeTab === 'announcements' && (
+   648→   648→            <SectionCard title="Pengumuman" icon={<Bell className="w-4 h-4" />}>
+   649→   649→              <div className="space-y-3">
+   650→   650→                {announcements.map(a => (
+   651→   651→                  <div key={a.id} className="border border-gray-100 rounded-xl p-4 hover:bg-gray-50 transition-colors">
+   652→   652→                    <div className="flex items-start gap-2 mb-2">
+   653→   653→                      {a.isPinned && (
+   654→   654→                        <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded border border-amber-200">
+   655→   655→                          <Star className="w-2.5 h-2.5" /> Penting
+   656→   656→                        </span>
+   657→   657→                      )}
+   658→   658→                      <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{a.category}</span>
+   659→   659→                    </div>
+   660→   660→                    <h3 className="font-semibold text-gray-800 text-sm">{a.title}</h3>
+   661→   661→                    <p className="text-xs text-gray-600 mt-2 leading-relaxed">{a.content}</p>
+   662→   662→                    <p className="text-[10px] text-gray-400 mt-2">
+   663→   663→                      {new Date(a.publishedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+   664→   664→                    </p>
+   665→   665→                  </div>
+   666→   666→                ))}
+   667→   667→              </div>
+   668→   668→            </SectionCard>
+   669→   669→          )}
+   670→   670→        </div>
+   671→   671→      </main>
+   672→   672→
+   673→   673→      {/* Bottom Navigation (Mobile) */}
+   674→   674→      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-50 safe-area-bottom">
+   675→   675→        <div className="max-w-2xl mx-auto flex justify-around">
+   676→   676→          {([
+   677→   677→            { key: 'dashboard', label: 'Beranda', icon: School },
+   678→   678→            { key: 'attendance', label: 'Presensi', icon: ClipboardCheck },
+   679→   679→            { key: 'grades', label: 'Nilai', icon: BookOpen },
+   680→   680→            { key: 'payments', label: 'SPP', icon: CreditCard },
+   681→   681→            { key: 'announcements', label: 'Info', icon: Bell },
+   682→   682→          ] as const).map(tab => (
+   683→   683→            <button
+   684→   684→              key={tab.key}
+   685→   685→              onClick={() => setActiveTab(tab.key)}
+   686→   686→              className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors ${
+   687→   687→                activeTab === tab.key ? 'text-emerald-600' : 'text-gray-400'
+   688→   688→              }`}
+   689→   689→            >
+   690→   690→              <tab.icon className="w-5 h-5" />
+   691→   691→              <span className="text-[10px] font-medium">{tab.label}</span>
+   692→   692→            </button>
+   693→   693→          ))}
+   694→   694→        </div>
+   695→   695→      </nav>
+   696→   696→    </div>
+   697→   697→  );
+   698→   698→}
+   699→   699→
+   700→   700→// ============================================================
+   701→   701→// Sub Components
+   702→   702→// ============================================================
+   703→   703→
+   704→   704→function StatCard({ icon, label, value, sublabel, color }: {
+   705→   705→  icon: React.ReactNode; label: string; value: string; sublabel: string; color: string;
+   706→   706→}) {
+   707→   707→  const colorMap: Record<string, string> = {
+   708→   708→    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+   709→   709→    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+   710→   710→    red: 'bg-red-50 text-red-700 border-red-100',
+   711→   711→    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+   712→   712→    purple: 'bg-purple-50 text-purple-700 border-purple-100',
+   713→   713→  };
+   714→   714→  const iconColorMap: Record<string, string> = {
+   715→   715→    emerald: 'text-emerald-500',
+   716→   716→    blue: 'text-blue-500',
+   717→   717→    red: 'text-red-500',
+   718→   718→    amber: 'text-amber-500',
+   719→   719→    purple: 'text-purple-500',
+   720→   720→  };
+   721→   721→
+   722→   722→  return (
+   723→   723→    <div className={`rounded-xl p-3 border ${colorMap[color]}`}>
+   724→   724→      <div className={`${iconColorMap[color]} mb-1`}>{icon}</div>
+   725→   725→      <p className="text-lg font-bold leading-tight">{value}</p>
+   726→   726→      <p className="text-[9px] opacity-70 mt-0.5">{sublabel}</p>
+   727→   727→    </div>
+   728→   728→  );
+   729→   729→}
+   730→   730→
+   731→   731→function SectionCard({ title, icon, children }: {
+   732→   732→  title: string; icon: React.ReactNode; children: React.ReactNode;
+   733→   733→}) {
+   734→   734→  return (
+   735→   735→    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+   736→   736→      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-50">
+   737→   737→        <span className="text-emerald-600">{icon}</span>
+   738→   738→        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+   739→   739→      </div>
+   740→   740→      <div className="p-4">{children}</div>
+   741→   741→    </div>
+   742→   742→  );
+   743→   743→}
+   744→   744→
