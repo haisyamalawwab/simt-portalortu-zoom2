@@ -46,6 +46,10 @@ model Tenant {
   announcements   Announcement[]
   grades          Grade[]
   whatsappConfigs WhatsappConfig[]
+  schedules       Schedule[]
+  violations      StudentViolation[]
+  achievements    StudentAchievement[]
+  tahfizRecords   TahfizRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -75,6 +79,7 @@ model User {
   attendanceMarks Attendance[]       @relation("AttendanceRecorder")
   waliKelasOf   Classroom[]         @relation("WaliKelas")
   subjects      Subject[]           @relation("SubjectTeacher")
+  scheduleSlots Schedule[]          @relation("ScheduleTeacher")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -131,6 +136,7 @@ model Classroom {
   waliKelas       User?        @relation("WaliKelas", fields: [waliKelasId], references: [id])
   students        Student[]
   subjects        Subject[]
+  schedules        Schedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,6 +159,7 @@ model Subject {
   classroom       Classroom @relation(fields: [classroomId], references: [id])
   teacher         User?     @relation("SubjectTeacher", fields: [teacherId], references: [id])
   grades          Grade[]
+  schedules        Schedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -204,12 +211,18 @@ model Student {
 
   isActive        Boolean       @default(true)
 
+  // Login Siswa
+  studentPassword String?       // Password untuk login Student Portal
+
   // Relations
   tenant          Tenant       @relation(fields: [tenantId], references: [id])
   classroom       Classroom?   @relation(fields: [classroomId], references: [id])
   attendances     Attendance[]
   grades          Grade[]
   payments        Payment[]
+  violations      StudentViolation[]
+  achievements    StudentAchievement[]
+  tahfizRecords   TahfizRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -366,6 +379,107 @@ model Announcement {
   updatedAt DateTime @updatedAt
 
   @@map("announcements")
+}
+
+// =====================================================
+// JADWAL PELAJARAN (Schedule)
+// =====================================================
+
+model Schedule {
+  id              String   @id @default(cuid())
+  tenantId        String
+  classroomId     String
+  subjectId       String
+  dayOfWeek       Int      // 1=Senin, 2=Selasa, ..., 6=Sabtu, 0=Minggu
+  startPeriod     Int      // Jam ke- (1-10)
+  endPeriod       Int      // Jam ke- (1-10)
+  teacherId       String?
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  classroom       Classroom @relation(fields: [classroomId], references: [id])
+  subject         Subject   @relation(fields: [subjectId], references: [id])
+  teacher         User?     @relation("ScheduleTeacher", fields: [teacherId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("schedules")
+}
+
+// =====================================================
+// KESISWAAN: Pelanggaran (Violations)
+// =====================================================
+
+model StudentViolation {
+  id          String   @id @default(cuid())
+  tenantId    String
+  studentId   String
+  date        DateTime
+  category    String   // ringan, sedang, berat
+  description String
+  points      Int      @default(0)  // Poin pelanggaran (negatif)
+  action      String?  // Tindakan / sanksi
+  recordedBy  String?  // User ID
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("student_violations")
+}
+
+// =====================================================
+// KESISWAAN: Prestasi (Achievements)
+// =====================================================
+
+model StudentAchievement {
+  id          String   @id @default(cuid())
+  tenantId    String
+  studentId   String
+  date        DateTime
+  title       String
+  category    String   // akademik, non-akademik, keagamaan, olahraga, seni
+  level       String   // kelas, sekolah, kecamatan, kota, provinsi, nasional, internasional
+  ranking     String?  // Juara 1, 2, 3, Peserta
+  description String?
+  certificate String? // Path to certificate
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("student_achievements")
+}
+
+// =====================================================
+// TAHFIZ: Monitoring Hafalan
+// =====================================================
+
+model TahfizRecord {
+  id              String   @id @default(cuid())
+  tenantId        String
+  studentId       String
+  date            DateTime
+  surah           String   // Nama surah
+  ayahStart       Int      // Ayat mulai
+  ayahEnd         Int      // Ayat selesai
+  type            String   // ziyadah (tambahan baru), murajaah (pengulangan)
+  score           Float    @default(0) // Nilai 0-100
+  fluency         String?  // lancar, cukup, kurang
+  note            String?
+  recordedBy      String?  // User ID guru tahfiz
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  student         Student  @relation(fields: [studentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tahfiz_records")
 }
 
 // =====================================================
