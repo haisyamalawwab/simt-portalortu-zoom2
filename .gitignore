@@ -73,3 +73,6 @@ db/*.db-*
 
 # Archive folder
 docs-archive/
+
+# Removed folders
+simt-laravel/.zscripts/
