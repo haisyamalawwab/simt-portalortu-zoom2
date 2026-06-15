@@ -1,0 +1,851 @@
+openapi: 3.0.3
+info:
+  title: SIMT Portal Ortu API
+  description: |
+    REST API untuk Sistem Informasi Manajemen Terpadu (SIMT) Portal Orang Tua dan Siswa.
+    
+    ## Fitur Utama
+    - Multi-tenant (mendukung banyak sekolah)
+    - Portal Orang Tua (Parent Portal)
+    - Portal Siswa (Student Portal)
+    - Dashboard kehadiran, nilai, pembayaran
+    - Manajemen tahfiz, prestasi, pelanggaran
+    
+    ## Authentication
+    - Parent: Login dengan email
+    - Student: Login dengan NIS + password
+    
+  version: 1.0.0
+  contact:
+    name: SIMT Development Team
+    email: support@simt.example.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://portal.simt.example.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: Endpoint untuk login parent dan student
+  - name: Dashboard
+    description: Endpoint untuk data dashboard
+  - name: Health
+    description: Health check endpoint
+
+paths:
+  /:
+    get:
+      tags:
+        - Health
+      summary: Health Check
+      description: Cek status API server
+      responses:
+        '200':
+          description: API server running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello, world!"
+
+  /auth:
+    post:
+      tags:
+        - Authentication
+      summary: Parent Login
+      description: Login untuk orang tua/wali menggunakan email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "parent@example.com"
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  students:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StudentBasicInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Email tidak terdaftar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Email tidak terdaftar sebagai wali murid"
+
+  /student-auth:
+    post:
+      tags:
+        - Authentication
+      summary: Student Login
+      description: Login untuk siswa menggunakan NIS dan password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nis
+                - password
+              properties:
+                nis:
+                  type: string
+                  example: "2024001"
+                password:
+                  type: string
+                  format: password
+                  example: "password123"
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/StudentProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Password salah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Password salah"
+        '403':
+          description: Akun belum diaktifkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Akun siswa belum diaktifkan. Hubungi TU."
+        '404':
+          description: NIS tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "NIS tidak terdaftar"
+
+  /dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Parent Dashboard Data
+      description: |
+        Mendapatkan data lengkap siswa untuk Parent Portal.
+        Termasuk: profil, kehadiran, nilai, pembayaran, pengumuman.
+      parameters:
+        - name: studentId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ID siswa (dari response login)
+          example: "clxxx123"
+        - name: gradeType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENGETAHUAN, KETERAMPILAN, UTS, UAS, SIKAP]
+            default: PENGETAHUAN
+          description: Jenis nilai yang ingin ditampilkan
+      responses:
+        '200':
+          description: Data dashboard berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentDashboardResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Siswa tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Siswa tidak ditemukan"
+
+  /student-dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Student Dashboard Data
+      description: |
+        Mendapatkan data lengkap untuk Student Portal.
+        Termasuk semua data parent dashboard + jadwal, pelanggaran, prestasi, tahfiz.
+      parameters:
+        - name: studentId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ID siswa
+          example: "clxxx123"
+        - name: gradeType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENGETAHUAN, KETERAMPILAN, UTS, UAS, SIKAP]
+            default: PENGETAHUAN
+          description: Jenis nilai yang ingin ditampilkan
+      responses:
+        '200':
+          description: Data dashboard berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDashboardResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Siswa tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Pesan error
+
+    TenantInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "MTs Al-Ikhlas"
+        slug:
+          type: string
+          example: "mts-alikhlas"
+        logo:
+          type: string
+          nullable: true
+          example: "/uploads/logo.png"
+        phone:
+          type: string
+          nullable: true
+          example: "0341-123456"
+        address:
+          type: string
+          nullable: true
+          example: "Jl. Raya Malang No. 123"
+
+    StudentBasicInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "clxxx123"
+        name:
+          type: string
+          example: "Ahmad Fauzi"
+        nis:
+          type: string
+          example: "2024001"
+        classroom:
+          type: string
+          nullable: true
+          example: "7A"
+        level:
+          type: integer
+          nullable: true
+          example: 7
+        tenant:
+          type: object
+          properties:
+            name:
+              type: string
+              example: "MTs Al-Ikhlas"
+            slug:
+              type: string
+              example: "mts-alikhlas"
+
+    StudentProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        nis:
+          type: string
+        nisn:
+          type: string
+          nullable: true
+        gender:
+          type: string
+          enum: [L, P]
+        classroom:
+          type: string
+          nullable: true
+        level:
+          type: integer
+          nullable: true
+        tenant:
+          $ref: '#/components/schemas/TenantInfo'
+        birthPlace:
+          type: string
+          nullable: true
+        birthDate:
+          type: string
+          format: date-time
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        photo:
+          type: string
+          nullable: true
+
+    AcademicYear:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "2024/2025"
+        semester:
+          type: integer
+          example: 1
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+
+    Classroom:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "7A"
+        level:
+          type: integer
+          example: 7
+        capacity:
+          type: integer
+          example: 30
+        academicYear:
+          $ref: '#/components/schemas/AcademicYear'
+        waliKelas:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+            phone:
+              type: string
+
+    Attendance:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [HADIR, SAKIT, IZIN, ALPHA]
+        timeIn:
+          type: string
+          nullable: true
+          example: "07:15:00"
+        timeOut:
+          type: string
+          nullable: true
+          example: "14:00:00"
+        notes:
+          type: string
+          nullable: true
+
+    AttendanceSummary:
+      type: object
+      properties:
+        hadir:
+          type: integer
+          example: 18
+        sakit:
+          type: integer
+          example: 1
+        izin:
+          type: integer
+          example: 0
+        alpha:
+          type: integer
+          example: 1
+        total:
+          type: integer
+          example: 20
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attendance'
+        periodLabel:
+          type: string
+          example: "Bulan Januari 2025"
+        hasData:
+          type: boolean
+
+    Grade:
+      type: object
+      properties:
+        id:
+          type: string
+        subjectId:
+          type: string
+        subject:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+              example: "Matematika"
+            code:
+              type: string
+              example: "MTK"
+            category:
+              type: string
+              example: "UMUM"
+        type:
+          type: string
+          enum: [PENGETAHUAN, KETERAMPILAN, UTS, UAS, SIKAP, RAPOR]
+        score:
+          type: number
+          format: float
+          example: 85
+        kkm:
+          type: number
+          format: float
+          example: 75
+        notes:
+          type: string
+          nullable: true
+        teacherId:
+          type: string
+        teacher:
+          type: object
+          properties:
+            name:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    GradeSummary:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grade'
+        average:
+          type: number
+          format: float
+          example: 82.5
+        count:
+          type: integer
+          example: 8
+        activeType:
+          type: string
+          example: "PENGETAHUAN"
+        availableTypes:
+          type: array
+          items:
+            type: string
+          example: ["PENGETAHUAN", "KETERAMPILAN", "UTS"]
+        hasData:
+          type: boolean
+        belowKKMCount:
+          type: integer
+          example: 1
+        pengetahuanAverage:
+          type: number
+          format: float
+          example: 82.5
+        isAllTuntas:
+          type: boolean
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SPP, DAFTAR_ULANG, SERAGAM, KEGIATAN, LAIN_LAIN]
+        amount:
+          type: number
+          format: float
+          example: 250000
+        month:
+          type: string
+          nullable: true
+          example: "Januari"
+        year:
+          type: integer
+          nullable: true
+          example: 2025
+        status:
+          type: string
+          enum: [BELUM_BAYAR, MENUNGGU, LUNAS, SEBAGIAN]
+        paidAmount:
+          type: number
+          format: float
+          nullable: true
+          example: 250000
+        paymentDate:
+          type: string
+          format: date-time
+          nullable: true
+        paymentMethod:
+          type: string
+          nullable: true
+          example: "TRANSFER"
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    PaymentSummary:
+      type: object
+      properties:
+        all:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        unpaid:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        totalUnpaid:
+          type: number
+          format: float
+          example: 250000
+        totalPaid:
+          type: number
+          format: float
+          example: 1750000
+        hasData:
+          type: boolean
+
+    Announcement:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        category:
+          type: string
+          enum: [UMUM, AKADEMIK, KEAGAMAAN, KEUANGAN, EKSTRAKURIKULER]
+        isPinned:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdBy:
+          type: object
+          properties:
+            name:
+              type: string
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: string
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          example: 1
+        startPeriod:
+          type: integer
+          example: 1
+        endPeriod:
+          type: integer
+          example: 2
+        subject:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+              example: "Matematika"
+            code:
+              type: string
+              example: "MTK"
+        teacher:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            phone:
+              type: string
+        classroom:
+          type: object
+          properties:
+            name:
+              type: string
+
+    Violation:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date-time
+        category:
+          type: string
+          enum: [TERLAMBAT, TIDAK_MASUK, PAKAIAN, BERKELAHI, MEROKOK, MEMBAWA_HP, LAINNYA]
+        description:
+          type: string
+        points:
+          type: integer
+          example: 5
+        action:
+          type: string
+          example: "Peringatan lisan"
+        handledBy:
+          type: object
+          properties:
+            name:
+              type: string
+
+    ViolationSummary:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/Violation'
+        totalPoints:
+          type: integer
+          example: 5
+        count:
+          type: integer
+          example: 1
+
+    Achievement:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date-time
+        title:
+          type: string
+        category:
+          type: string
+          enum: [PRESTASI_AKADEMIK, PRESTASI_OLAHRAGA, PRESTASI_SENI, PRESTASI_KEAGAMAAN, LAINNYA]
+        level:
+          type: string
+          enum: [KELAS, SEKOLAH, KECAMATAN, KABUPATEN_KOTA, PROVINSI, NASIONAL, INTERNASIONAL]
+        ranking:
+          type: integer
+          nullable: true
+          example: 1
+        organizer:
+          type: string
+          example: "Kemenag Kota Malang"
+        certificateUrl:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    AchievementSummary:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/Achievement'
+        count:
+          type: integer
+
+    TahfizRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [ZIYADAH, MURAJAAH]
+        surah:
+          type: string
+          example: "Al-Baqarah"
+        ayahStart:
+          type: integer
+          example: 1
+        ayahEnd:
+          type: integer
+          example: 5
+        score:
+          type: number
+          format: float
+          example: 90
+        fluency:
+          type: string
+          enum: [SANGAT_LANCAR, LANCAR, CUKUP_LANCAR, KURANG_LANCAR]
+        notes:
+          type: string
+          nullable: true
+        teacher:
+          type: object
+          properties:
+            name:
+              type: string
+
+    TahfizSummary:
+      type: object
+      properties:
+        totalRecords:
+          type: integer
+          example: 45
+        ziyadahCount:
+          type: integer
+          example: 25
+        murajaahCount:
+          type: integer
+          example: 20
+        averageScore:
+          type: number
+          format: float
+          example: 88.5
+        surahMemorized:
+          type: integer
+          example: 12
+        latestRecords:
+          type: array
+          items:
+            $ref: '#/components/schemas/TahfizRecord'
+
+    StudentDetail:
+      allOf:
+        - $ref: '#/components/schemas/StudentProfile'
+        - type: object
+          properties:
+            fatherName:
+              type: string
+              nullable: true
+            fatherPhone:
+              type: string
+              nullable: true
+            motherName:
+              type: string
+              nullable: true
+            motherPhone:
+              type: string
+              nullable: true
+            parentEmail:
+              type: string
+              nullable: true
+            classroom:
+              $ref: '#/components/schemas/Classroom'
+
+    ParentDashboardResponse:
+      type: object
+      properties:
+        student:
+          $ref: '#/components/schemas/StudentDetail'
+        attendanceSummary:
+          $ref: '#/components/schemas/AttendanceSummary'
+        grades:
+          $ref: '#/components/schemas/GradeSummary'
+        payments:
+          $ref: '#/components/schemas/PaymentSummary'
+        announcements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Announcement'
+
+    StudentDashboardResponse:
+      allOf:
+        - $ref: '#/components/schemas/ParentDashboardResponse'
+        - type: object
+          properties:
+            schedules:
+              type: array
+              items:
+                $ref: '#/components/schemas/Schedule'
+            violations:
+              $ref: '#/components/schemas/ViolationSummary'
+            achievements:
+              $ref: '#/components/schemas/AchievementSummary'
+            tahfiz:
+              $ref: '#/components/schemas/TahfizSummary'
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Parameter tidak valid"

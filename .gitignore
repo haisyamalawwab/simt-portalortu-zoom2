@@ -63,3 +63,13 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Development database
+db/*.db
+db/*.db-*
+
+# Runtime files
+*.pid
+
+# Archive folder
+docs-archive/
