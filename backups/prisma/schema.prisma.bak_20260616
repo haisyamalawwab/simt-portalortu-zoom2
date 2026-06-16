@@ -16,14 +16,10 @@ datasource db {
   // Ganti sesuai provider di .env:
   //   "postgresql" → NeonDB / Supabase
   //   "mysql"      → Aiven MySQL
-  //   "postgresql" → NeonDB / Supabase / Railway / Render
-  //   "mysql"      → Aiven MySQL / PlanetScale
-  //   "sqlite"     → Development lokal
   provider  = "sqlite"
   url       = env("DATABASE_URL")
   // directUrl dipakai untuk NeonDB + connection pooling (pgbouncer)
-    // Untuk MySQL/Supabase non-pooled, bisa dikosongkan atau sama dengan DATABASE_URL
-  // Opsional: kosongkan atau samakan dengan DATABASE_URL jika tidak pakai pooler
+  // Untuk MySQL/Supabase non-pooled, bisa dikosongkan atau sama dengan DATABASE_URL
   directUrl = env("DATABASE_DIRECT_URL")
 }
 
