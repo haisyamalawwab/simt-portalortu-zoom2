@@ -1,67 +1,53 @@
-import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function GET(request: Request) {
+// ============================================================
+// DEPRECATED: /api/grade-details — Legacy route
+// Redirected ke BFF: /api/bff/portal/students/[id]/subjects/[subjectId]/grade-details
+// Dipertahankan untuk backward compatibility dengan page.tsx
+// ============================================================
+
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get('studentId');
     const subjectId = searchParams.get('subjectId');
 
     if (!studentId || !subjectId) {
-      return NextResponse.json({ error: 'studentId dan subjectId wajib diisi' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'studentId dan subjectId wajib diisi' },
+        { status: 400 }
+      );
     }
 
-    const details = await db.gradeDetail.findMany({
-      where: { studentId, subjectId },
-      orderBy: [{ category: 'asc' }, { date: 'asc' }],
-    });
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.getAll()
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
 
-    // Group by category
-    const grouped = {
-      tugas: details.filter(d => d.category === 'TUGAS').map(d => ({
-        id: d.id, title: d.title, score: d.score, weight: d.weight,
-        date: d.date ? (d.date instanceof Date ? d.date.toISOString() : String(d.date)) : null,
-        note: d.note,
-      })),
-      harian: details.filter(d => d.category === 'HARIAN').map(d => ({
-        id: d.id, title: d.title, score: d.score, weight: d.weight,
-        date: d.date ? (d.date instanceof Date ? d.date.toISOString() : String(d.date)) : null,
-        note: d.note,
-      })),
-      uts: details.filter(d => d.category === 'UTS').map(d => ({
-        id: d.id, title: d.title, score: d.score, weight: d.weight,
-        date: d.date ? (d.date instanceof Date ? d.date.toISOString() : String(d.date)) : null,
-        note: d.note,
-      })),
-      uas: details.filter(d => d.category === 'UAS').map(d => ({
-        id: d.id, title: d.title, score: d.score, weight: d.weight,
-        date: d.date ? (d.date instanceof Date ? d.date.toISOString() : String(d.date)) : null,
-        note: d.note,
-      })),
-      akhir: details.filter(d => d.category === 'AKHIR').map(d => ({
-        id: d.id, title: d.title, score: d.score, weight: d.weight,
-        date: d.date ? (d.date instanceof Date ? d.date.toISOString() : String(d.date)) : null,
-        note: d.note,
-      })),
-    };
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const res = await fetch(
+      `${baseUrl}/api/bff/portal/students/${studentId}/subjects/${subjectId}/grade-details`,
+      {
+        method: 'GET',
+        headers: {
+          'Cookie': cookieHeader,
+          'Accept': 'application/json',
+        },
+      }
+    );
 
-    // Calculate averages
-    const avg = (arr: { score: number }[]) =>
-      arr.length > 0 ? Math.round(arr.reduce((s, d) => s + d.score, 0) / arr.length * 10) / 10 : null;
+    const data = await res.json();
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: data.error || 'Gagal memuat data' },
+        { status: res.status }
+      );
+    }
 
-    return NextResponse.json({
-      details: grouped,
-      averages: {
-        tugas: avg(grouped.tugas),
-        harian: avg(grouped.harian),
-        uts: avg(grouped.uts),
-        uas: avg(grouped.uas),
-        akhir: avg(grouped.akhir),
-      },
-      hasData: details.length > 0,
-    });
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('Grade Details API error:', error);
+    console.error('[legacy /api/grade-details] Error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }

@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 
-// POST /api/student-auth - Login as student using NIS + password
+// ============================================================
+// DEPRECATED: /api/student-auth — Legacy route
+// Redirected ke BFF: /api/bff/auth/student-login
+// Dipertahankan untuk backward compatibility dengan page.tsx
+// ============================================================
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -11,50 +15,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'NIS dan password wajib diisi' }, { status: 400 });
     }
 
-    // Find student by NIS
-    const student = await db.student.findFirst({
-      where: { nis, isActive: true },
-      include: {
-        classroom: {
-          select: { name: true, level: true },
-        },
-        tenant: { select: { name: true, slug: true } },
-      },
+    // Forward ke BFF student-login (same-origin, langsung ke route handler)
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const res = await fetch(`${baseUrl}/api/bff/auth/student-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nis, password }),
     });
 
-    if (!student) {
-      return NextResponse.json({ error: 'NIS tidak terdaftar' }, { status: 404 });
+    const data = await res.json();
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: data.error || 'Login gagal' },
+        { status: res.status }
+      );
     }
 
-    // Verify password (simple check - in production use bcrypt)
-    if (student.studentPassword && student.studentPassword !== password) {
-      return NextResponse.json({ error: 'Password salah' }, { status: 401 });
-    }
-
-    // If no password set, reject
-    if (!student.studentPassword) {
-      return NextResponse.json({ error: 'Akun siswa belum diaktifkan. Hubungi TU.' }, { status: 403 });
-    }
-
-    // Return student info (without password)
-    return NextResponse.json({
-      student: {
-        id: student.id,
-        name: student.name,
-        nis: student.nis,
-        nisn: student.nisn,
-        gender: student.gender,
-        classroom: student.classroom?.name,
-        level: student.classroom?.level,
-        tenant: student.tenant,
-        birthPlace: student.birthPlace,
-        birthDate: student.birthDate?.toISOString(),
-        address: student.address,
-        photo: student.photo,
-      },
-    });
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('Student auth error:', error);
+    console.error('[legacy /api/student-auth] Error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }
