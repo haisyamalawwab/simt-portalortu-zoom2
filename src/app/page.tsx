@@ -549,6 +549,8 @@ export default function SIMTPortal() {
 
   // Parent
   const [email, setEmail] = useState('');
+  const [parentPassword, setParentPassword] = useState('');
+  const [showParentPassword, setShowParentPassword] = useState(false);
   const [parentStudents, setParentStudents] = useState<StudentInfo[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [parentDashboard, setParentDashboard] = useState<ParentDashboardData | null>(null);
@@ -596,11 +598,15 @@ export default function SIMTPortal() {
   // === PARENT LOGIN ===
   const handleParentLogin = useCallback(async () => {
     if (!email.trim()) { setLoginError('Email wajib diisi'); return; }
+    if (!parentPassword.trim()) { setLoginError('Password wajib diisi'); return; }
     setIsLoading(true); setLoginError('');
     try {
       const res = await fetch('/api/auth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: parentPassword,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setLoginError(data.error || 'Login gagal'); return; }
@@ -614,7 +620,7 @@ export default function SIMTPortal() {
       }
     } catch { setLoginError('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'); }
     finally { setIsLoading(false); }
-  }, [email]);
+  }, [email, parentPassword]);
 
   // === STUDENT LOGIN ===
   const handleStudentLogin = useCallback(async () => {
@@ -705,7 +711,7 @@ export default function SIMTPortal() {
   // Logout
   const handleLogout = () => {
     setIsLoggedIn(false); setParentDashboard(null); setStudentDashboard(null);
-    setEmail(''); setNis(''); setStudentPassword('');
+    setEmail(''); setParentPassword(''); setNis(''); setStudentPassword('');
     setSelectedStudentId(null); setParentStudents([]);
     setParentTab('dashboard'); setStudentTab('dashboard');
     setShowLogoutConfirm(false); setLoginError('');
@@ -821,6 +827,22 @@ export default function SIMTPortal() {
                         autoComplete="email" inputMode="email" />
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type={showParentPassword ? 'text' : 'password'} value={parentPassword}
+                        onChange={(e) => { setParentPassword(e.target.value); setLoginError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleParentLogin()}
+                        placeholder="Masukkan password"
+                        className="w-full pl-10 pr-11 py-3 border border-gray-200 rounded-xl native-input text-base outline-none"
+                        autoComplete="current-password" />
+                      <button type="button" onClick={() => setShowParentPassword(!showParentPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-2 touch-target-sm flex items-center justify-center rounded-lg">
+                        {showParentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
                   {loginError && (
                     <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 animate-slide-down">
                       <AlertCircle className="w-4 h-4 shrink-0" />{loginError}
@@ -831,7 +853,7 @@ export default function SIMTPortal() {
                     {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-4 h-4" />Masuk</>}
                   </button>
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                    <p className="text-xs text-amber-700"><strong>Demo:</strong> Email <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0001@simt.local</code> s/d <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0010@simt.local</code></p>
+                    <p className="text-xs text-amber-700"><strong>Demo:</strong> Email <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0001@simt.local</code> s/d <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0010@simt.local</code>, Password: <code className="bg-amber-100 px-1 py-0.5 rounded">password</code></p>
                   </div>
                 </div>
               ) : (
