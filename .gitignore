@@ -21,6 +21,7 @@ dist/
 
 # production
 /build
+/DEV_DOCS/docs_sim/
 
 # misc
 .DS_Store
