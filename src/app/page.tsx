@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { hydrateStudentCache } from '@/lib/cache-hydrator';
 import {
   GraduationCap, LogIn, BookOpen, ClipboardCheck, CreditCard,
   Bell, User, AlertCircle, CheckCircle2,
@@ -548,6 +549,8 @@ export default function SIMTPortal() {
 
   // Parent
   const [email, setEmail] = useState('');
+  const [parentPassword, setParentPassword] = useState('');
+  const [showParentPassword, setShowParentPassword] = useState(false);
   const [parentStudents, setParentStudents] = useState<StudentInfo[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [parentDashboard, setParentDashboard] = useState<ParentDashboardData | null>(null);
@@ -595,22 +598,29 @@ export default function SIMTPortal() {
   // === PARENT LOGIN ===
   const handleParentLogin = useCallback(async () => {
     if (!email.trim()) { setLoginError('Email wajib diisi'); return; }
+    if (!parentPassword.trim()) { setLoginError('Password wajib diisi'); return; }
     setIsLoading(true); setLoginError('');
     try {
       const res = await fetch('/api/auth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: parentPassword,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setLoginError(data.error || 'Login gagal'); return; }
       setParentStudents(data.students);
       if (data.students.length > 0) {
-        setSelectedStudentId(data.students[0].id);
+        const firstStudentId = data.students[0].id;
+        setSelectedStudentId(firstStudentId);
         setIsLoggedIn(true);
+        // Pre-warm cache di background untuk akses offline
+        hydrateStudentCache({ studentId: firstStudentId, role: 'parent' }).catch(() => {});
       }
     } catch { setLoginError('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'); }
     finally { setIsLoading(false); }
-  }, [email]);
+  }, [email, parentPassword]);
 
   // === STUDENT LOGIN ===
   const handleStudentLogin = useCallback(async () => {
@@ -624,8 +634,11 @@ export default function SIMTPortal() {
       });
       const data = await res.json();
       if (!res.ok) { setLoginError(data.error || 'Login gagal'); return; }
-      setSelectedStudentId(data.student.id);
+      const studentId = data.student.id;
+      setSelectedStudentId(studentId);
       setIsLoggedIn(true);
+      // Pre-warm cache di background untuk akses offline
+      hydrateStudentCache({ studentId, role: 'student' }).catch(() => {});
     } catch { setLoginError('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'); }
     finally { setIsLoading(false); }
   }, [nis, studentPassword]);
@@ -698,7 +711,7 @@ export default function SIMTPortal() {
   // Logout
   const handleLogout = () => {
     setIsLoggedIn(false); setParentDashboard(null); setStudentDashboard(null);
-    setEmail(''); setNis(''); setStudentPassword('');
+    setEmail(''); setParentPassword(''); setNis(''); setStudentPassword('');
     setSelectedStudentId(null); setParentStudents([]);
     setParentTab('dashboard'); setStudentTab('dashboard');
     setShowLogoutConfirm(false); setLoginError('');
@@ -809,9 +822,25 @@ export default function SIMTPortal() {
                       <input type="email" value={email}
                         onChange={(e) => { setEmail(e.target.value); setLoginError(''); }}
                         onKeyDown={(e) => e.key === 'Enter' && handleParentLogin()}
-                        placeholder="ortu1@email.com"
+                        placeholder="wali_0001@simt.local"
                         className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl native-input text-base outline-none"
                         autoComplete="email" inputMode="email" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type={showParentPassword ? 'text' : 'password'} value={parentPassword}
+                        onChange={(e) => { setParentPassword(e.target.value); setLoginError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleParentLogin()}
+                        placeholder="Masukkan password"
+                        className="w-full pl-10 pr-11 py-3 border border-gray-200 rounded-xl native-input text-base outline-none"
+                        autoComplete="current-password" />
+                      <button type="button" onClick={() => setShowParentPassword(!showParentPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-2 touch-target-sm flex items-center justify-center rounded-lg">
+                        {showParentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
                   {loginError && (
@@ -824,7 +853,7 @@ export default function SIMTPortal() {
                     {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-4 h-4" />Masuk</>}
                   </button>
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                    <p className="text-xs text-amber-700"><strong>Demo:</strong> Email <code className="bg-amber-100 px-1 py-0.5 rounded">ortu1@email.com</code> s/d <code className="bg-amber-100 px-1 py-0.5 rounded">ortu8@email.com</code></p>
+                    <p className="text-xs text-amber-700"><strong>Demo:</strong> Email <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0001@simt.local</code> s/d <code className="bg-amber-100 px-1 py-0.5 rounded">wali_0010@simt.local</code>, Password: <code className="bg-amber-100 px-1 py-0.5 rounded">password</code></p>
                   </div>
                 </div>
               ) : (
@@ -836,7 +865,7 @@ export default function SIMTPortal() {
                       <input type="text" value={nis}
                         onChange={(e) => { setNis(e.target.value); setLoginError(''); }}
                         onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()}
-                        placeholder="20250001"
+                        placeholder="0001"
                         className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl native-input-blue text-base outline-none"
                         inputMode="numeric" autoComplete="username" />
                     </div>
@@ -867,7 +896,7 @@ export default function SIMTPortal() {
                     {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-4 h-4" />Masuk</>}
                   </button>
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-xs text-blue-700"><strong>Demo:</strong> NIS <code className="bg-blue-100 px-1 py-0.5 rounded">20250001</code> s/d <code className="bg-blue-100 px-1 py-0.5 rounded">20250010</code>, Password: <code className="bg-blue-100 px-1 py-0.5 rounded">siswa123</code></p>
+                    <p className="text-xs text-blue-700"><strong>Demo:</strong> NIS <code className="bg-blue-100 px-1 py-0.5 rounded">0001</code> s/d <code className="bg-blue-100 px-1 py-0.5 rounded">0010</code>, Password: <code className="bg-blue-100 px-1 py-0.5 rounded">siswa123</code></p>
                   </div>
                 </div>
               )}

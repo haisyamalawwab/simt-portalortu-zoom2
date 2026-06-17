@@ -3,13 +3,24 @@
 // ============================================================
 // SIMT Portal Ortu — Offline Banner Component
 // Muncul saat offline atau ada pending sync items
+//
+// NOTE: Menggunakan `mounted` state untuk mencegah hydration mismatch.
+// Server selalu render null, client render null pada pass pertama
+// (match dengan server), baru render konten nyata setelah mount.
 // ============================================================
+import { useState, useEffect } from 'react';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { WifiOff, Wifi, RefreshCw, CheckCircle2, Clock } from 'lucide-react';
 
 export function OfflineBanner() {
   const { isOnline, pendingSyncCount, isSyncing, lastSyncAt, triggerSync } =
     useOfflineSync();
+
+  // Guard: render null sampai component mount di client.
+  // Mencegah hydration mismatch karena navigator.onLine hanya ada di browser.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
 
   // Hitung berapa menit lalu
   const minutesAgo = lastSyncAt

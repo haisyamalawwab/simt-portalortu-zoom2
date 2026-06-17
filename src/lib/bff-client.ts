@@ -2,7 +2,13 @@
  * BFF (Backend-for-Frontend) Client
  * 
  * Handles communication between Next.js and Laravel Backend.
- * Supports offline mode with local caching.
+ * Offline caching is handled transparently by the Service Worker (Serwist).
+ * This client focuses purely on HTTP communication + auth headers.
+ * 
+ * Cache Layer Architecture:
+ *   L1: Service Worker (Serwist) — intercepts fetch, strategy per route
+ *   L2: Dexie IndexedDB — structured offline data (via cache-hydrator.ts)
+ *   L3: localStorage — legacy fallback (maintained for backward compat)
  */
 
 // ============================================================
@@ -29,61 +35,6 @@ const DEFAULT_CONFIG: BFFConfig = {
   timeout: 15000,
   retries: 2,
 };
-
-// ============================================================
-// Cache Keys
-// ============================================================
-const CACHE_KEYS = {
-  DASHBOARD: (studentId: string) => `cache_dashboard_${studentId}`,
-  STUDENT_DASHBOARD: (studentId: string) => `cache_student_dashboard_${studentId}`,
-  GRADE_DETAILS: (studentId: string, subjectId: string) => `cache_grades_${studentId}_${subjectId}`,
-};
-
-// ============================================================
-// Cache Helpers
-// ============================================================
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-  expiresAt: number;
-}
-
-function getCached<T>(key: string, maxAge: number = 5 * 60 * 1000): T | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const item = localStorage.getItem(key);
-    if (!item) return null;
-    const entry: CacheEntry<T> = JSON.parse(item);
-    if (Date.now() > entry.expiresAt) {
-      localStorage.removeItem(key);
-      return null;
-    }
-    return entry.data;
-  } catch {
-    return null;
-  }
-}
-
-function setCache<T>(key: string, data: T, maxAge: number = 5 * 60 * 1000): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const entry: CacheEntry<T> = {
-      data,
-      timestamp: Date.now(),
-      expiresAt: Date.now() + maxAge,
-    };
-    localStorage.setItem(key, JSON.stringify(entry));
-  } catch (e) {
-    console.error('Cache set error:', e);
-  }
-}
-
-export function clearCache(): void {
-  if (typeof window === 'undefined') return;
-  Object.values(localStorage)
-    .filter(key => key.startsWith('cache_'))
-    .forEach(key => localStorage.removeItem(key));
-}
 
 // ============================================================
 // Fetch with Retry & Timeout
@@ -132,8 +83,6 @@ export class BFFClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    cacheKey?: string,
-    cacheMaxAge?: number
   ): Promise<BFFResponse<T>> {
     const url = `${this.config.baseUrl}${endpoint}`;
     const token = this.getAccessToken();
@@ -147,15 +96,9 @@ export class BFFClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // Try to get from cache first (for offline support)
-    if (cacheKey && options.method === 'GET' || !options.method) {
-      const cached = getCached<T>(cacheKey, cacheMaxAge);
-      if (cached) {
-        return { data: cached, error: null, status: 200, cached: true };
-      }
-    }
-
     try {
+      // Service Worker akan intercept request ini dan menerapkan cache strategy
+      // yang sesuai (CacheFirst, NetworkFirst, dll.) berdasarkan URL pattern
       const res = await fetchWithRetry(
         url,
         { ...options, headers },
@@ -174,26 +117,13 @@ export class BFFClient {
         };
       }
 
-      // Cache successful GET responses
-      if (cacheKey && (!options.method || options.method === 'GET')) {
-        setCache(cacheKey, data, cacheMaxAge);
-      }
+      // Cek apakah response datang dari SW cache
+      const isCached = res.headers.get('x-serwist-cache') !== null
+        || res.headers.get('sw-fetched-on') !== null;
 
-      return { data, error: null, status: res.status, cached: false };
-    } catch (err) {
-      // Network error - try to return cached data
-      if (cacheKey) {
-        const cached = getCached<T>(cacheKey, cacheMaxAge);
-        if (cached) {
-          return {
-            data: cached,
-            error: 'Menggunakan data tersimpan (offline)',
-            status: 200,
-            cached: true,
-          };
-        }
-      }
-
+      return { data, error: null, status: res.status, cached: isCached };
+    } catch {
+      // Network error + SW tidak punya cache — genuinely offline
       return {
         data: null,
         error: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.',
@@ -235,13 +165,12 @@ export class BFFClient {
 
   // ============================================================
   // Dashboard Endpoints
+  // Caching: handled by Service Worker (NetworkFirst, 5min TTL)
   // ============================================================
   async getParentDashboard(studentId: string) {
     return this.request<any>(
       `/portal/students/${studentId}/dashboard`,
       { method: 'GET' },
-      CACHE_KEYS.DASHBOARD(studentId),
-      5 * 60 * 1000 // 5 minutes cache
     );
   }
 
@@ -249,8 +178,6 @@ export class BFFClient {
     return this.request<any>(
       `/portal/students/${studentId}/student-dashboard`,
       { method: 'GET' },
-      CACHE_KEYS.STUDENT_DASHBOARD(studentId),
-      5 * 60 * 1000 // 5 minutes cache
     );
   }
 
@@ -258,8 +185,6 @@ export class BFFClient {
     return this.request<any>(
       `/portal/students/${studentId}/subjects/${subjectId}/grade-details`,
       { method: 'GET' },
-      CACHE_KEYS.GRADE_DETAILS(studentId, subjectId),
-      10 * 60 * 1000 // 10 minutes cache
     );
   }
 }
@@ -279,4 +204,12 @@ export function getBFFClient(getAccessToken?: () => string | null): BFFClient {
 export function initBFFClient(getAccessToken: () => string | null): BFFClient {
   bffClientInstance = new BFFClient({}, getAccessToken);
   return bffClientInstance;
+}
+
+// Legacy compat — hapus pada refactor berikutnya
+export function clearCache(): void {
+  if (typeof window === 'undefined') return;
+  Object.keys(localStorage)
+    .filter(key => key.startsWith('cache_'))
+    .forEach(key => localStorage.removeItem(key));
 }
